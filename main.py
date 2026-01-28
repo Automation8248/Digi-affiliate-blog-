@@ -8,20 +8,24 @@ from openai import OpenAI
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 
-# --- CONFIGURATION (UPDATED) ---
+# --- CONFIGURATION (UPDATED WITH STRICT CLEANER) ---
 GITHUB_TOKEN = os.environ.get("GH_MARKETPLACE_TOKEN") 
 
-# 👉 Yahan hum .strip() laga rahe hain taaki Space hat jaye
+# 👉 STEP 1: Blog ID Cleaning Logic (The Fix)
 raw_blog_id = os.environ.get("BLOGGER_ID")
-BLOGGER_ID = raw_blog_id.strip().replace('"', '') if raw_blog_id else None 
 
-# New Authentication Variables
+if raw_blog_id:
+    # Ye line har wo cheez hata degi jo NUMBER nahi hai (Space, quotes, hidden chars)
+    BLOGGER_ID = re.sub(r'\D', '', str(raw_blog_id))
+    print(f"DEBUG: Cleaned Blog ID: {BLOGGER_ID}")
+else:
+    BLOGGER_ID = None
+    print("❌ ERROR: Blog ID not found in Environment Variables")
+
+# Authentication Variables
 CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 REFRESH_TOKEN = os.environ.get("GOOGLE_REFRESH_TOKEN")
-
-# Debugging Print (Error pakadne ke liye)
-print(f"DEBUG: Using Blog ID: '{BLOGGER_ID}'")
 
 # DeepSeek Client
 client = OpenAI(
@@ -32,11 +36,11 @@ client = OpenAI(
 # --- 1. CLEANER & HELPER FUNCTIONS ---
 
 def clean_text_for_blogger(text):
-    # Remove <think> tags
+    # Remove <think> tags (DeepSeek thinking process)
     text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-    # Remove markdown symbols
+    # Remove markdown symbols like **, ##, *
     text = text.replace('**', '').replace('*', '').replace('##', '').replace('#', '')
-    # Remove explicit "Title:" text
+    # Remove explicit "Title:" text if AI adds it
     text = text.replace('Title:', '').strip()
     return text
 
@@ -72,6 +76,11 @@ def get_eligible_product():
         history = {}
 
     all_files = [f for f in os.listdir('products') if f.endswith('.json')]
+    
+    if not all_files:
+        print("❌ CRITICAL: No JSON files found in 'products/' folder.")
+        exit()
+
     available_products = []
     today = datetime.now().date()
 
@@ -90,12 +99,8 @@ def get_eligible_product():
         available_products.append(filename)
 
     if not available_products:
-        print("⚠️ All products in cooldown. Picking oldest used.")
-        if all_files:
-             return random.choice(all_files)
-        else:
-             print("❌ No product files found in 'products/' folder!")
-             exit()
+        print("⚠️ All products in cooldown. Picking oldest used product.")
+        return random.choice(all_files)
 
     return random.choice(available_products)
 
@@ -137,27 +142,34 @@ def generate_content(product):
     
     user_prompt = f"Write a detailed review for '{product['product_name']}' targeting {product.get('target_keywords', 'health enthusiasts')}."
 
-    response = client.chat.completions.create(
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        model="DeepSeek-R1",
-        temperature=1.0,
-        max_tokens=4000 
-    )
+    try:
+        response = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            model="DeepSeek-R1",
+            temperature=1.0,
+            max_tokens=4000 
+        )
 
-    raw_text = response.choices[0].message.content
-    cleaned_text = clean_text_for_blogger(raw_text)
-    
-    lines = cleaned_text.split('\n')
-    title = lines[0]
-    if len(title) > 60: title = title[:60]
-    
-    body_text = "\n".join(lines[1:])
-    paragraphs = [p for p in body_text.split('\n\n') if len(p) > 50]
-    
-    return title, paragraphs
+        raw_text = response.choices[0].message.content
+        cleaned_text = clean_text_for_blogger(raw_text)
+        
+        lines = cleaned_text.split('\n')
+        # Title extraction logic
+        title = lines[0]
+        if len(title) > 60: title = title[:60]
+        
+        body_text = "\n".join(lines[1:])
+        paragraphs = [p for p in body_text.split('\n\n') if len(p) > 50]
+        
+        return title, paragraphs
+        
+    except Exception as e:
+        print(f"❌ AI Generation Error: {e}")
+        # Return fallback content to prevent crash
+        return f"{product['product_name']} Review", [f"Check out {product['product_name']}."]
 
 # --- 4. IMAGE & BUTTON INJECTION ---
 
@@ -194,6 +206,11 @@ def create_promo_block(image_url, affiliate_link):
 def merge_content(paragraphs, product):
     all_images = product.get('image_urls', [])
     
+    # Ensure images exist
+    if not all_images:
+        print("⚠️ Warning: No images found in JSON. Using text only.")
+        return "".join([f"<p>{p}</p>" for p in paragraphs])
+
     if len(all_images) < 3: selected_images = all_images * 4
     else: selected_images = list(all_images)
     
@@ -203,6 +220,7 @@ def merge_content(paragraphs, product):
     affiliate_link = product['affiliate_link']
     final_html = ""
     
+    # Logic: 1st Para -> Image 1 -> Distributed Images -> Rest Text
     if paragraphs: 
         final_html += f"<p>{paragraphs[0]}</p>" 
     
@@ -231,12 +249,16 @@ def merge_content(paragraphs, product):
         
     return final_html
 
-# --- 5. PUBLISH TO BLOGGER (UPDATED AUTH) ---
+# --- 5. PUBLISH TO BLOGGER ---
 
 def post_to_blogger(title, content_html, labels):
-    print("🔑 Authenticating with Google using Split Secrets...")
+    print("🔑 Authenticating with Google using Secrets...")
     
-    # Manually constructing the credentials dictionary from Environment Variables
+    # Validate Secrets
+    if not CLIENT_ID or not CLIENT_SECRET or not REFRESH_TOKEN:
+        print("❌ ERROR: Missing Google Secrets (CLIENT_ID, SECRET, or REFRESH_TOKEN)")
+        return
+
     creds_info = {
         "client_id": CLIENT_ID,
         "client_secret": CLIENT_SECRET,
@@ -245,15 +267,14 @@ def post_to_blogger(title, content_html, labels):
         "scopes": ["https://www.googleapis.com/auth/blogger"]
     }
 
-    # Validate if secrets are present
-    if not CLIENT_ID or not CLIENT_SECRET or not REFRESH_TOKEN:
-        print("❌ ERROR: Missing one or more Google Secrets (CLIENT_ID, SECRET, REFRESH_TOKEN).")
-        return
-
     try:
         creds = Credentials.from_authorized_user_info(creds_info)
         service = build('blogger', 'v3', credentials=creds)
         
+        if not BLOGGER_ID:
+            print("❌ ERROR: Cannot post because BLOGGER_ID is invalid or missing.")
+            return
+
         body = {
             "kind": "blogger#post",
             "title": title,
@@ -261,6 +282,7 @@ def post_to_blogger(title, content_html, labels):
             "labels": labels 
         }
         
+        print(f"🚀 Attempting to post to Blog ID: {BLOGGER_ID}")
         posts = service.posts()
         result = posts.insert(blogId=BLOGGER_ID, body=body).execute()
         print(f"✅ PUBLISHED SUCCESSFULLY! URL: {result['url']}")
@@ -268,6 +290,9 @@ def post_to_blogger(title, content_html, labels):
         
     except Exception as e:
         print(f"❌ Failed to publish: {e}")
+        # Agar 400 Error aaye to exact reason print karega
+        if hasattr(e, 'content'):
+            print(f"🔍 Google Error Details: {e.content}")
 
 # --- MAIN EXECUTION ---
 if __name__ == "__main__":
@@ -276,6 +301,7 @@ if __name__ == "__main__":
         selected_file = get_eligible_product()
         print(f"🚀 Starting automation for: {selected_file}")
         
+        # Load Product Data
         with open(f'products/{selected_file}', 'r') as f:
             product_data = json.load(f)
             
@@ -295,4 +321,4 @@ if __name__ == "__main__":
         update_history(selected_file)
         
     except Exception as e:
-        print(f"Error in Main Loop: {e}")
+        print(f"❌ Critical Error in Main Loop: {e}")
