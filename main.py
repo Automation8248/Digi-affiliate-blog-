@@ -3,18 +3,18 @@ import json
 import random
 import re
 import time
-import requests # New dependency for downloading images
-import base64   # For encoding images
+import requests # Catbox ke liye zaroori
 from datetime import datetime
 from openai import OpenAI
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from googleapiclient.errors import HttpError
+import socket
 
 # --- CONFIGURATION ---
-GITHUB_TOKEN = os.environ.get("GH_MARKETPLACE_TOKEN") 
+GITHUB_TOKEN = os.environ.get("GH_MARKETPLACE_TOKEN")
 
-# 👉 HARDCODED BLOG ID (Error Free)
+# 👉 HARDCODED BLOG ID
 BLOGGER_ID = "8697171360337652733"
 
 # Authentication Variables
@@ -32,14 +32,11 @@ client = OpenAI(
 
 def clean_text_for_blogger(text):
     text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-    # Remove markdown formatting
     text = text.replace('**', '').replace('*', '').replace('##', '').replace('#', '')
-    # Remove "Title:" prefix if AI adds it
     text = re.sub(r'^Title:\s*', '', text, flags=re.IGNORECASE)
     return text.strip()
 
 def get_smart_labels(product):
-    # Simple SEO Labels
     niche_keywords = product.get('niche', 'Health').split('&')
     clean_niche = [w.strip() for w in niche_keywords if len(w.strip()) > 3]
     base_labels = ["Health Review", "Wellness Tips"]
@@ -47,26 +44,37 @@ def get_smart_labels(product):
     all_labels = list(set(product_label + clean_niche + base_labels))
     return all_labels[:5]
 
-# 👉 NEW: Function to Download Image and Convert to Base64 code
-# Ye function image ko download karke HTML ke andar embed karne layak banata hai
-def download_and_encode_image(image_url):
+# 👉 FUNCTION: Upload to CATBOX.MOE (Images 100% dikhengi)
+def upload_to_catbox(image_url):
+    print(f"⬇️ Processing Image: {image_url[:40]}...")
     try:
-        print(f"⬇️ Downloading image... {image_url[:30]}...")
-        # Image download karo (10 second timeout ke sath)
-        response = requests.get(image_url, timeout=10)
-        response.raise_for_status() # Agar error aaye to batao
+        # 1. Download Image
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        img_resp = requests.get(image_url, headers=headers, timeout=15)
         
-        # Pata karo ki image JPEG hai ya PNG
-        content_type = response.headers.get('content-type', 'image/jpeg')
+        if img_resp.status_code != 200:
+            print(f"❌ Download Failed: {img_resp.status_code}")
+            return None
+            
+        # 2. Upload to Catbox
+        catbox_api = "https://catbox.moe/user/api.php"
+        data = {'reqtype': 'fileupload'}
+        files = {
+            'fileToUpload': ('image.jpg', img_resp.content, 'image/jpeg')
+        }
         
-        # Image ko text code (Base64) mein badlo
-        encoded_string = base64.b64encode(response.content).decode('utf-8')
+        upload_resp = requests.post(catbox_api, data=data, files=files, timeout=30)
         
-        # Final data string return karo jo HTML img tag mein lagegi
-        return f"data:{content_type};base64,{encoded_string}"
-        
+        if upload_resp.status_code == 200:
+            new_url = upload_resp.text.strip()
+            print(f"✅ Catbox Link Created: {new_url}")
+            return new_url
+        else:
+            print(f"❌ Catbox Failed: {upload_resp.text}")
+            return None
+            
     except Exception as e:
-        print(f"❌ Error downloading image: {e}")
+        print(f"❌ Image Error: {e}")
         return None
 
 # --- 2. MEMORY & PRODUCT SELECTION ---
@@ -112,26 +120,25 @@ def update_history(filename):
     history[product_name] = datetime.now().strftime("%Y-%m-%d")
     with open('history.json', 'w') as f: json.dump(history, f, indent=4)
 
-# --- 3. AI CONTENT GENERATION (SIMPLE ENGLISH & SHORT PARAS) ---
+# --- 3. AI CONTENT GENERATION (STRICT HUMANIZED PROMPT) ---
 
 def generate_content(product):
     print(f"✍️ Writing article for: {product['product_name']}...")
     
-    # 👉 Updated Prompt for Simple Language and Short Paragraphs
+    # 👉 YOUR ORIGINAL HUMANIZED PROMPT IS BACK
     system_prompt = """
     You are a friendly, empathetic health enthusiast sharing advice with a neighbor. You are NOT a salesperson and NOT an AI.
 
     *** CRITICAL "HUMAN-WRITING" RULES (MUST FOLLOW) ***
     1. TONE: Casual, conversational, and empathetic. Use "I", "You", and "We".
-       - BAD: "Obesity is a growing concern globally."
-       - GOOD: "Let's be real—losing those last few pounds feels impossible, right?"
+       - BAD: "Obesity is a growing concern."
+       - GOOD: "Let's be real—losing weight feels impossible sometimes."
     2. VOCABULARY: Use Grade 6 level English.
-       - FORBIDDEN WORDS (NEVER USE): "Delve", "Realm", "Tapestry", "Unleash", "Unlock", "Game-changer", "Revolutionary", "Landscape", "In conclusion", "Moreover", "Firstly/Secondly".
-       - Instead of "Utilize", say "Use". Instead of "Facilitate", say "Help".
-    3. SENTENCE STRUCTURE: vary your sentence length. Use short, punchy sentences.
-       - Example: "It works. Plain and simple."
-    4. PARAGRAPHS: Keep them TINY. Max 2-3 sentences per paragraph. Huge blocks of text scare readers.
-    5. NO HYPE: Don't overpromise. Don't say "Magical cure". Say "It might help you support your goals".
+       - FORBIDDEN WORDS (NEVER USE): "Delve", "Realm", "Tapestry", "Unleash", "Unlock", "Game-changer", "Revolutionary", "Landscape", "In conclusion", "Moreover".
+       - Instead of "Utilize", say "Use".
+    3. SENTENCE STRUCTURE: Use short, punchy sentences.
+    4. PARAGRAPHS: Keep them TINY. Max 2-3 sentences per paragraph.
+    5. NO HYPE: Don't overpromise. Don't say "Magical cure". Say "It might help".
 
     *** HTML FORMATTING RULES ***
     - Use ONLY these tags: <p>, <h2>, <ul>, <li>, <strong>.
@@ -140,14 +147,13 @@ def generate_content(product):
 
     *** ARTICLE STRUCTURE ***
     1. HOOK TITLE: A question or curiosity gap (Do not start with product name).
-    2. THE STRUGGLE (Intro): Connect with the reader's pain. Show you understand how hard it is.
-    3. THE "WHY": briefly explain why their current methods failed (it's not their fault).
+    2. THE STRUGGLE (Intro): Connect with the reader's pain.
+    3. THE "WHY": Briefly explain why their current methods failed.
     4. THE DISCOVERY: Introduce the product as something you found that helps.
-    5. BENEFITS (Bulleted): 5-6 real-life benefits (e.g., "Fits into your busy morning").
+    5. BENEFITS (Bulleted): 5-6 real-life benefits.
     6. HOW TO USE: Simple instructions.
-    7. WHO IS THIS FOR?: Be specific.
-    8. FAQ: 3-5 common questions with short, honest answers.
-    9. FINAL WORDS: A warm, encouraging sign-off (No "In summary").
+    7. FAQ: 3-5 common questions with short answers.
+    8. FINAL WORDS: A warm, encouraging sign-off.
 
     *** OUTPUT FORMAT (STRICT) ***
     Title: [Insert Human-Style Hook Title]
@@ -155,26 +161,12 @@ def generate_content(product):
     <h2>[Heading: Focus on the Problem]</h2>
     <p>...</p>
 
-    <h2>[Heading: Why it happens]</h2>
-    <p>...</p>
-
     <h2>[Heading: A New Way to Handle It]</h2>
     <p>...</p>
-
-    <h2>Key Benefits You Might Notice</h2>
-    <ul>
-    <li><strong>Benefit 1:</strong> ...</li>
-    <li><strong>Benefit 2:</strong> ...</li>
-    </ul>
-
-    <h2>How to Use It</h2>
-    <p>...</p>
-
-    <h2>Common Questions</h2>
-    <p><strong>Q: ...?</strong><br>A: ...</p>
+    (rest of the body HTML)
     """
     
-    user_prompt = f"Write a simple review for '{product['product_name']}' in the niche '{product['niche']}'. Focus on benefits."
+    user_prompt = f"Write a simple, human-like review for '{product['product_name']}' in the niche '{product['niche']}'."
 
     try:
         response = client.chat.completions.create(
@@ -183,7 +175,7 @@ def generate_content(product):
                 {"role": "user", "content": user_prompt}
             ],
             model="DeepSeek-R1",
-            temperature=0.8, # Thoda creative kam kiya taki simple likhe
+            temperature=0.9, # Thoda creative taki human lage
             max_tokens=4000 
         )
         raw_text = response.choices[0].message.content
@@ -199,10 +191,7 @@ def generate_content(product):
             body = "\n".join(lines[1:])
             
         title = title.replace('"', '').replace('*', '')
-        
-        # Break body into paragraphs by double newlines or closing p tags
         paragraphs = [p.strip() for p in re.split(r'</p>|\n\n', body) if len(p.strip()) > 20]
-        # Add back <p> tags if missing after split, ensure they are wrapped
         cleaned_paras = []
         for p in paragraphs:
             if not p.startswith('<p>'): p = f"<p>{p}"
@@ -214,11 +203,10 @@ def generate_content(product):
         print(f"❌ AI Error: {e}")
         return f"Review: {product['product_name']}", ["Content generation failed."]
 
-# --- 4. IMAGE & BUTTON INJECTION (AMAZON STYLE) ---
+# --- 4. IMAGE & BUTTON INJECTION ---
 
-# 👉 Note: image_data here is now Base64 code, not a URL
-def create_promo_block(image_data_base64, affiliate_link):
-    # Amazon Style Button (Orange/Yellow Gradient)
+def create_promo_block(image_url, affiliate_link):
+    # 👉 AMAZON STYLE BUTTON (Yellow/Orange)
     btn_style = """
         background: linear-gradient(to bottom, #f8c147 0%, #f7dfa5 100%);
         background-color: #f0c14b;
@@ -234,15 +222,12 @@ def create_promo_block(image_data_base64, affiliate_link):
         cursor: pointer;
         box-shadow: 0 1px 0 rgba(255,255,255,0.4) inset;
     """
-    
-    # Image style
     img_style = "width: 100%; max-width: 600px; height: auto; border: 1px solid #eee; margin-bottom: 15px; border-radius: 8px;"
     
-    # 👉 Image src is now Base64 data, wrapped in a link
     html = f"""
     <div style="text-align: center; margin: 35px 0;">
         <a href="{affiliate_link}" target="_blank" rel="nofollow">
-            <img src="{image_data_base64}" style="{img_style}" alt="Product Check">
+            <img src="{image_url}" style="{img_style}" alt="Product View">
         </a>
         <br>
         <a href="{affiliate_link}" target="_blank" rel="nofollow" style="{btn_style}">
@@ -258,18 +243,18 @@ def merge_content(title, paragraphs, product):
         print("⚠️ No image URLs found.")
         all_image_urls = []
 
-    # 👉 Logic: Select randomly 2 or 3 unique URLs
+    # Select 2 or 3 random URLs
     num_images_to_use = random.randint(2, 3)
     selected_urls = random.sample(all_image_urls, min(len(all_image_urls), num_images_to_use))
     
-    # 👉 NEW STEP: Download and Encode images before placing them
+    # 👉 UPLOAD TO CATBOX
     ready_to_use_images = []
     for url in selected_urls:
-        encoded_img = download_and_encode_image(url)
-        if encoded_img:
-            ready_to_use_images.append(encoded_img)
+        catbox_url = upload_to_catbox(url)
+        if catbox_url:
+            ready_to_use_images.append(catbox_url)
 
-    print(f"✅ Successfully downloaded and encoded {len(ready_to_use_images)} images.")
+    print(f"✅ Images Ready (Catbox): {len(ready_to_use_images)}")
     
     affiliate_link = product['affiliate_link']
     final_html = ""
@@ -284,7 +269,7 @@ def merge_content(title, paragraphs, product):
     else:
         remaining_paras = []
         
-    # 3. Add First Downloaded Image & Button
+    # 3. Add First Catbox Image & Button
     if ready_to_use_images:
         final_html += create_promo_block(ready_to_use_images.pop(0), affiliate_link)
         
@@ -293,12 +278,12 @@ def merge_content(title, paragraphs, product):
         gap = max(1, len(remaining_paras) // (len(ready_to_use_images) + 1))
         idx = 0
         
-        for img_data in ready_to_use_images:
+        for img_url in ready_to_use_images:
             for _ in range(gap):
                 if idx < len(remaining_paras):
                     final_html += remaining_paras[idx]
                     idx += 1
-            final_html += create_promo_block(img_data, affiliate_link)
+            final_html += create_promo_block(img_url, affiliate_link)
             
         while idx < len(remaining_paras):
             final_html += remaining_paras[idx]
@@ -326,20 +311,19 @@ def post_to_blogger(title, content_html, labels):
     }
 
     try:
-        # Increased timeout for posting because images make payload bigger
-        import socket
-        socket.setdefaulttimeout(60) 
+        # Increase timeout
+        socket.setdefaulttimeout(120) 
 
         creds = Credentials.from_authorized_user_info(creds_info)
         service = build('blogger', 'v3', credentials=creds)
         
-        # Professional Container
+        # 👉 PROFESSIONAL HTML STYLING (Restore kiya gaya hai)
         final_styled_body = f"""
         <div style="font-family: Verdana, sans-serif; font-size: 16px; line-height: 1.6; color: #333; background-color: #fff; padding: 15px; max-width: 800px; margin: auto;">
             {content_html}
             <br><hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0;">
             <p style="font-size: 13px; color: #777; text-align: center;">
-                <i>Transparency: This article may contain affiliate links. If you purchase through them, we may earn a small commission at no extra cost to you.</i>
+                <i>Transparency: This article contains affiliate links. We may earn a small commission if you purchase through them.</i>
             </p>
         </div>
         """
@@ -351,7 +335,7 @@ def post_to_blogger(title, content_html, labels):
             "labels": labels 
         }
         
-        print("🚀 Uploading post (this might take a few seconds due to images)...")
+        print("🚀 Uploading post to Blogger...")
         posts = service.posts()
         result = posts.insert(blogId=BLOGGER_ID, body=body).execute()
         print(f"✅ SUCCESS! Published: '{title}'")
@@ -380,6 +364,7 @@ if __name__ == "__main__":
             print("❌ Error: No content generated.")
             exit()
             
+        # Catbox Logic enabled
         final_blog_post = merge_content(title_text, paras, product_data)
         
         post_to_blogger(title_text, final_blog_post, seo_labels)
