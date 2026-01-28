@@ -3,7 +3,7 @@ import json
 import random
 import re
 import time
-import requests # Catbox ke liye zaroori
+import requests # Image processing ke liye zaroori
 from datetime import datetime
 from openai import OpenAI
 from googleapiclient.discovery import build
@@ -39,38 +39,38 @@ def clean_text_for_blogger(text):
 def get_smart_labels(product):
     niche_keywords = product.get('niche', 'Health').split('&')
     clean_niche = [w.strip() for w in niche_keywords if len(w.strip()) > 3]
-    base_labels = ["Health Review", "Wellness Tips"]
+    base_labels = ["Health Review", "Wellness Tips", "Honest Reviews"]
     product_label = [product['product_name']]
     all_labels = list(set(product_label + clean_niche + base_labels))
     return all_labels[:5]
 
-# 👉 FUNCTION: Upload to CATBOX.MOE (Images 100% dikhengi)
+# 👉 FEATURE: Upload to CATBOX (Images Fix)
 def upload_to_catbox(image_url):
-    print(f"⬇️ Processing Image: {image_url[:40]}...")
+    print(f"⬇️ Processing Image for Blog: {image_url[:40]}...")
     try:
         # 1. Download Image
         headers = {'User-Agent': 'Mozilla/5.0'}
-        img_resp = requests.get(image_url, headers=headers, timeout=15)
+        img_resp = requests.get(image_url, headers=headers, timeout=20)
         
         if img_resp.status_code != 200:
-            print(f"❌ Download Failed: {img_resp.status_code}")
+            print(f"❌ Download Failed. Status: {img_resp.status_code}")
             return None
             
-        # 2. Upload to Catbox
+        # 2. Upload to Catbox (Free Host)
         catbox_api = "https://catbox.moe/user/api.php"
         data = {'reqtype': 'fileupload'}
         files = {
             'fileToUpload': ('image.jpg', img_resp.content, 'image/jpeg')
         }
         
-        upload_resp = requests.post(catbox_api, data=data, files=files, timeout=30)
+        upload_resp = requests.post(catbox_api, data=data, files=files, timeout=45)
         
         if upload_resp.status_code == 200:
             new_url = upload_resp.text.strip()
-            print(f"✅ Catbox Link Created: {new_url}")
+            print(f"✅ Image Ready: {new_url}")
             return new_url
         else:
-            print(f"❌ Catbox Failed: {upload_resp.text}")
+            print(f"❌ Upload Failed: {upload_resp.text}")
             return None
             
     except Exception as e:
@@ -120,87 +120,88 @@ def update_history(filename):
     history[product_name] = datetime.now().strftime("%Y-%m-%d")
     with open('history.json', 'w') as f: json.dump(history, f, indent=4)
 
-# --- 3. AI CONTENT GENERATION (STRICT HUMANIZED PROMPT) ---
+# --- 3. AI CONTENT GENERATION (SAFE & LONG FORM) ---
 
 def generate_content(product):
-    print(f"✍️ Writing article for: {product['product_name']}...")
+    print(f"✍️ Writing 1200+ word review for: {product['product_name']}...")
     
-    # 👉 YOUR ORIGINAL HUMANIZED PROMPT IS BACK
+    # 👉 SYSTEM PROMPT (SAFE + LONG FORM)
     system_prompt = """
-    You are a professional Health Affiliate Content Writer for US and UK audiences.
-    Your goal is to educate first and softly review products without making medical claims.
+    You are a professional Health Affiliate Content Writer.
+    Your goal is to write a COMPREHENSIVE (1200–1800 words), SAFE, and HONEST review.
 
-    *** STRICT & NON-NEGOTIABLE RULES (TO AVOID BAN) ***
-    1. LANGUAGE: Use very simple, clear English (Grade 7-8 level). Write for normal people.
-    2. TONE: Informational, neutral, and helpful. NEVER aggressive or salesy.
-    3. PARAGRAPHS: Each paragraph must contain ONLY 2–3 short sentences.
-    4. CLAIMS: NEVER say "cure", "treat", "prevent", "fix", or "guaranteed results".
-       - Use ONLY soft words like: "may help", "supports", "designed to", "can be useful".
-    5. COMPLIANCE: Content must feel like an educational blog, not a sales page.
-    6. FORMATTING: Use ONLY clean HTML tags (<p>, <h2>, <ul>, <li>, <strong>). NO Markdown.
-    7. VOCABULARY: Do NOT use AI words like "Delve", "Realm", "Unlock", "Revolutionary".
+    *** STRICT RULES (TO AVOID BAN & RANK HIGH) ***
+    1. WORD COUNT: The article MUST be long, detailed, and cover every aspect. Aim for 1500 words.
+    2. LANGUAGE: Simple, clear English (Grade 7-8 level).
+    3. TONE: Informational, neutral, and helpful. NEVER aggressive.
+    4. CLAIMS: NEVER say "cure", "treat", "fix". Use "supports", "may help".
+    5. FORMATTING: Use ONLY clean HTML tags (<p>, <h2>, <ul>, <li>, <strong>).
+    6. STRUCTURE: Mix education with review.
 
-    *** CONTENT STRATEGY (Hybrid Blog + Review) ***
-    - 60% Education & General Advice (This keeps the blog safe).
-    - 30% Neutral Product Review.
-    - 10% Soft Call-to-Action.
-
-    *** REQUIRED STRUCTURE (FOLLOW EXACTLY) ***
+    *** REQUIRED STRUCTURE (EXPAND EACH SECTION) ***
 
     Title: [Curiosity-based, safe title. Do NOT start with Product Name]
     |||
-    <h2>[Heading: Introduce the Problem, e.g., Why Energy Drops Afternoon]</h2>
-    <p>Introduce the common problem in a general, educational way. Show empathy.</p>
+    <h2>[Heading: Describe the Core Problem deeply]</h2>
+    <p>[Write 2-3 detailed paragraphs about the struggle/problem]</p>
 
-    <h2>Why This Is a Common Issue</h2>
-    <p>Explain why many people face this issue (lifestyle, diet, age) in simple terms.</p>
+    <h2>Why This Issue Happens (The Science)</h2>
+    <p>[Explain the root causes in simple terms - 2 paragraphs]</p>
 
-    <h2>General Ways to Support This Health Area</h2>
-    <p>Talk about water, sleep, or habits FIRST. Do NOT mention the product yet. (This builds trust).</p>
+    <h2>General Ways to Support Health (Lifestyle)</h2>
+    <p>[Discuss diet, sleep, and habits first - 2 paragraphs]</p>
 
-    <h2>An Option People Are Talking About: [Product Name]</h2>
-    <p>Introduce the product softly as one possible option people consider for extra support.</p>
+    <h2>Introducing [Product Name]: A Potential Solution?</h2>
+    <p>[Introduce the product gently. What is the story behind it?]</p>
 
-    <h2>What is [Product Name] Designed For?</h2>
-    <p>Explain what it aims to do, using words like "supports" or "promotes". No hype.</p>
+    <h2>How [Product Name] Is Designed to Work</h2>
+    <p>[Explain the mechanism/working logic in detail]</p>
+
+    <h2>Key Ingredients Analysis</h2>
+    <ul>
+    <li><strong>Ingredient 1:</strong> What it does (softly).</li>
+    <li><strong>Ingredient 2:</strong> What it does (softly).</li>
+    <li><strong>Ingredient 3:</strong> What it does (softly).</li>
+    <li>(Add more ingredients)</li>
+    </ul>
 
     <h2>Potential Benefits</h2>
     <ul>
-    <li>[Benefit 1 - One short sentence]</li>
-    <li>[Benefit 2 - One short sentence]</li>
-    <li>[Benefit 3 - One short sentence]</li>
-    <li>[Benefit 4 - One short sentence]</li>
-    <li>[Benefit 5 - One short sentence]</li>
+    <li>[Benefit 1 - Detailed explanation]</li>
+    <li>[Benefit 2 - Detailed explanation]</li>
+    <li>[Benefit 3 - Detailed explanation]</li>
+    <li>[Benefit 4 - Detailed explanation]</li>
+    <li>[Benefit 5 - Detailed explanation]</li>
     </ul>
 
-    <h2>Pros and Cons</h2>
+    <h2>Pros and Cons (Honest Look)</h2>
     <p><strong>Pros:</strong></p>
     <ul>
     <li>Natural ingredients</li>
     <li>Easy to use</li>
-    <li>(Add 1-2 more real pros)</li>
+    <li>(Add 2-3 more)</li>
     </ul>
     <p><strong>Cons:</strong></p>
     <ul>
     <li>Only available online</li>
-    <li>Results may vary from person to person</li>
+    <li>Individual results vary</li>
     </ul>
 
     <h2>Who Should Consider This?</h2>
-    <p>Define the audience gently using "may" and "might". (e.g., "People who want extra support with X").</p>
+    <p>[Define the audience clearly]</p>
 
-    <h2>Final Thoughts</h2>
-    <p>Wrap up warmly. Add a soft CTA like: "If you are interested, you can check the official details below."</p>
+    <h2>Final Verdict</h2>
+    <p>[Summarize everything. Add a soft call to action to check the official site.]</p>
 
     <h2>Frequently Asked Questions</h2>
-    <p><strong>Q: [Insert Question]?</strong><br>A: [Short, neutral answer].</p>
-    <p><strong>Q: [Insert Question]?</strong><br>A: [Short, neutral answer].</p>
-    <p><strong>Q: [Insert Question]?</strong><br>A: [Short, neutral answer].</p>
+    <p><strong>Q: ...?</strong><br>A: ...</p>
+    <p><strong>Q: ...?</strong><br>A: ...</p>
+    <p><strong>Q: ...?</strong><br>A: ...</p>
 
-    <p><em><small>Disclaimer: This article is for informational purposes only and does not replace professional medical advice. Individual results may vary.</small></em></p>
+    <p><em><small>Disclaimer: This article is for informational purposes only. Consult a doctor before starting any supplement.</small></em></p>
     """
     
-    user_prompt = f"Write a simple, human-like review for '{product['product_name']}' in the niche '{product['niche']}'."
+    user_prompt = f"Write a long, detailed review for '{product['product_name']}' in the niche '{product['niche']}'."
 
     try:
         response = client.chat.completions.create(
@@ -209,8 +210,8 @@ def generate_content(product):
                 {"role": "user", "content": user_prompt}
             ],
             model="DeepSeek-R1",
-            temperature=0.9, # Thoda creative taki human lage
-            max_tokens=4000 
+            temperature=1.0, # High creativity for length
+            max_tokens=5000  # Allowed max length
         )
         raw_text = response.choices[0].message.content
         cleaned_text = clean_text_for_blogger(raw_text)
@@ -225,11 +226,16 @@ def generate_content(product):
             body = "\n".join(lines[1:])
             
         title = title.replace('"', '').replace('*', '')
+        
+        # Split logic: Keep HTML tags intact
         paragraphs = [p.strip() for p in re.split(r'</p>|\n\n', body) if len(p.strip()) > 20]
         cleaned_paras = []
         for p in paragraphs:
-            if not p.startswith('<p>'): p = f"<p>{p}"
-            if not p.endswith('</p>'): p = f"{p}</p>"
+            # Re-wrap if needed
+            if not p.startswith('<') and not p.startswith('Consider'): 
+                 p = f"<p>{p}</p>"
+            elif p.startswith('<p>') and not p.endswith('</p>'):
+                 p = f"{p}</p>"
             cleaned_paras.append(p)
             
         return title, cleaned_paras
@@ -237,7 +243,7 @@ def generate_content(product):
         print(f"❌ AI Error: {e}")
         return f"Review: {product['product_name']}", ["Content generation failed."]
 
-# --- 4. IMAGE & BUTTON INJECTION ---
+# --- 4. IMAGE & BUTTON INJECTION (FEATURE YOU WANTED) ---
 
 def create_promo_block(image_url, affiliate_link):
     # 👉 AMAZON STYLE BUTTON (Yellow/Orange)
@@ -246,7 +252,7 @@ def create_promo_block(image_url, affiliate_link):
         background-color: #f0c14b;
         border: 1px solid #a88734;
         color: #111 !important;
-        padding: 12px 24px;
+        padding: 14px 28px;
         font-size: 18px;
         font-weight: bold;
         text-decoration: none;
@@ -255,18 +261,22 @@ def create_promo_block(image_url, affiliate_link):
         margin: 20px 0;
         cursor: pointer;
         box-shadow: 0 1px 0 rgba(255,255,255,0.4) inset;
+        font-family: Arial, sans-serif;
     """
-    img_style = "width: 100%; max-width: 600px; height: auto; border: 1px solid #eee; margin-bottom: 15px; border-radius: 8px;"
+    img_style = "width: 100%; max-width: 600px; height: auto; border: 1px solid #ddd; margin-bottom: 15px; border-radius: 8px;"
     
+    # Image + Button + Affiliate Link Wrapper
     html = f"""
-    <div style="text-align: center; margin: 35px 0;">
+    <div style="text-align: center; margin: 40px 0; padding: 20px; background-color: #fdfdfd; border: 1px solid #eee;">
         <a href="{affiliate_link}" target="_blank" rel="nofollow">
-            <img src="{image_url}" style="{img_style}" alt="Product View">
+            <img src="{image_url}" style="{img_style}" alt="Product Insight">
         </a>
         <br>
         <a href="{affiliate_link}" target="_blank" rel="nofollow" style="{btn_style}">
             BUY NOW
         </a>
+        <br>
+        <small style="color: #888;">Official Site | 100% Safe & Secure</small>
     </div>
     """
     return html
@@ -281,14 +291,14 @@ def merge_content(title, paragraphs, product):
     num_images_to_use = random.randint(2, 3)
     selected_urls = random.sample(all_image_urls, min(len(all_image_urls), num_images_to_use))
     
-    # 👉 UPLOAD TO CATBOX
+    # 👉 UPLOAD TO CATBOX (Ensures images appear)
     ready_to_use_images = []
     for url in selected_urls:
         catbox_url = upload_to_catbox(url)
         if catbox_url:
             ready_to_use_images.append(catbox_url)
 
-    print(f"✅ Images Ready (Catbox): {len(ready_to_use_images)}")
+    print(f"✅ Images Ready to Inject: {len(ready_to_use_images)}")
     
     affiliate_link = product['affiliate_link']
     final_html = ""
@@ -299,26 +309,31 @@ def merge_content(title, paragraphs, product):
     # 2. Add First Paragraph
     if paragraphs:
         final_html += paragraphs[0]
-        remaining_paras = paragraphs[1:]
+        if len(paragraphs) > 1: final_html += paragraphs[1] # Add 2 paras before first image
+        remaining_paras = paragraphs[2:]
     else:
         remaining_paras = []
         
-    # 3. Add First Catbox Image & Button
+    # 3. Add First Image & Button
     if ready_to_use_images:
         final_html += create_promo_block(ready_to_use_images.pop(0), affiliate_link)
         
-    # 4. Mix remaining images
+    # 4. Smart Mix: Distribute remaining images evenly
     if ready_to_use_images and remaining_paras:
-        gap = max(1, len(remaining_paras) // (len(ready_to_use_images) + 1))
+        # Calculate gap (e.g., insert image every 4 paragraphs)
+        gap = max(3, len(remaining_paras) // (len(ready_to_use_images) + 1))
         idx = 0
         
         for img_url in ready_to_use_images:
+            # Add text blocks
             for _ in range(gap):
                 if idx < len(remaining_paras):
                     final_html += remaining_paras[idx]
                     idx += 1
+            # Add Image Block
             final_html += create_promo_block(img_url, affiliate_link)
             
+        # Add rest of the text
         while idx < len(remaining_paras):
             final_html += remaining_paras[idx]
             idx += 1
@@ -345,19 +360,19 @@ def post_to_blogger(title, content_html, labels):
     }
 
     try:
-        # Increase timeout
+        # Increase timeout for upload
         socket.setdefaulttimeout(120) 
 
         creds = Credentials.from_authorized_user_info(creds_info)
         service = build('blogger', 'v3', credentials=creds)
         
-        # 👉 PROFESSIONAL HTML STYLING (Restore kiya gaya hai)
+        # Professional Styling Container
         final_styled_body = f"""
-        <div style="font-family: Verdana, sans-serif; font-size: 16px; line-height: 1.6; color: #333; background-color: #fff; padding: 15px; max-width: 800px; margin: auto;">
+        <div style="font-family: Verdana, sans-serif; font-size: 16px; line-height: 1.8; color: #222; background-color: #fff; padding: 20px; max-width: 800px; margin: auto;">
             {content_html}
-            <br><hr style="border: 0; border-top: 1px solid #eee; margin: 30px 0;">
-            <p style="font-size: 13px; color: #777; text-align: center;">
-                <i>Transparency: This article contains affiliate links. We may earn a small commission if you purchase through them.</i>
+            <br><hr style="border: 0; border-top: 1px solid #eee; margin: 40px 0;">
+            <p style="font-size: 14px; color: #666; text-align: center; background: #f9f9f9; padding: 10px;">
+                <i>Transparency Disclosure: This content is reader-supported. We may earn a commission if you click through and make a purchase, at no additional cost to you.</i>
             </p>
         </div>
         """
@@ -392,13 +407,14 @@ if __name__ == "__main__":
             
         seo_labels = get_smart_labels(product_data)
         
+        # Generates Long-Form Content
         title_text, paras = generate_content(product_data)
         
         if not paras:
             print("❌ Error: No content generated.")
             exit()
             
-        # Catbox Logic enabled
+        # Merges Content with Catbox Images & Buttons
         final_blog_post = merge_content(title_text, paras, product_data)
         
         post_to_blogger(title_text, final_blog_post, seo_labels)
