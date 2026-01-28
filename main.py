@@ -8,12 +8,16 @@ from openai import OpenAI
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION (UPDATED FOR YOUR SECRETS) ---
 GITHUB_TOKEN = os.environ.get("GH_MARKETPLACE_TOKEN") 
-BLOGGER_ID = os.environ.get("BLOGGER_ID")
-GOOGLE_CREDS = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+BLOGGER_ID = os.environ.get("BLOGGER_ID") # Ye BLOGGER_BLOG_ID se aa raha hai
 
-# DeepSeek Client (GitHub Models)
+# New Authentication Variables
+CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
+REFRESH_TOKEN = os.environ.get("GOOGLE_REFRESH_TOKEN")
+
+# DeepSeek Client
 client = OpenAI(
     base_url="https://models.inference.ai.azure.com",
     api_key=GITHUB_TOKEN,
@@ -22,32 +26,19 @@ client = OpenAI(
 # --- 1. CLEANER & HELPER FUNCTIONS ---
 
 def clean_text_for_blogger(text):
-    """
-    Ye function AI ke output se Markdown symbols (*, #) hatata hai
-    aur ensure karta hai ki text saaf HTML ho.
-    """
-    # 1. Remove <think>...</think> (DeepSeek ka thinking process hatana)
+    # Remove <think> tags
     text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
-    
-    # 2. Remove stars (**) aur hashtags (#)
+    # Remove markdown symbols
     text = text.replace('**', '').replace('*', '').replace('##', '').replace('#', '')
-    
-    # 3. Agar AI ne Title ko "Title:" likh diya ho to hatana
+    # Remove explicit "Title:" text
     text = text.replace('Title:', '').strip()
-    
     return text
 
 def get_smart_labels(product):
-    """
-    Ye function product ki 'Niche' ke hisaab se Fixed SEO Labels uthata hai.
-    Taki labels baar-baar duplicate na banein (Consistency).
-    """
     niche = product.get('niche', 'General').lower()
     product_name = product['product_name']
     
-    # Master Label List (SEO Friendly)
     base_labels = ["Health Reviews", "Wellness", "Dietary Supplements"]
-    
     specific_labels = []
     
     if "weight" in niche or "fat" in niche or "metabolic" in niche:
@@ -61,17 +52,12 @@ def get_smart_labels(product):
     else:
         specific_labels = ["Health Tips", "Natural Remedies"]
         
-    # Final List: Product Name + Base + Specific
-    # Blogger automatically purane labels se match kar lega agar spelling same hai.
     final_labels = [product_name] + base_labels + specific_labels
-    
-    # Sirf top 5 labels return karega
     return final_labels[:5]
 
 # --- 2. MEMORY & PRODUCT SELECTION ---
 
 def get_eligible_product():
-    # History load karo
     if os.path.exists('history.json'):
         with open('history.json', 'r') as f:
             try: history = json.load(f)
@@ -93,13 +79,17 @@ def get_eligible_product():
             last_used_date = datetime.strptime(last_used_str, "%Y-%m-%d").date()
             days_diff = (today - last_used_date).days
             if days_diff < 5:
-                continue # Skip agar 5 din nahi hue
+                continue 
         
         available_products.append(filename)
 
     if not available_products:
         print("⚠️ All products in cooldown. Picking oldest used.")
-        return random.choice(all_files)
+        if all_files:
+             return random.choice(all_files)
+        else:
+             print("❌ No product files found in 'products/' folder!")
+             exit()
 
     return random.choice(available_products)
 
@@ -119,7 +109,6 @@ def update_history(filename):
 def generate_content(product):
     print(f"✍️ Writing article for: {product['product_name']}...")
     
-    # Strict Prompt for HTML format and No Markdown
     system_prompt = """
     You are a professional SEO Health Copywriter.
     Write a high-converting, educational blog post.
@@ -155,16 +144,11 @@ def generate_content(product):
     raw_text = response.choices[0].message.content
     cleaned_text = clean_text_for_blogger(raw_text)
     
-    # Title extraction logic (Assuming first line is title or close to it)
     lines = cleaned_text.split('\n')
     title = lines[0]
-    if len(title) > 60: title = title[:60] # SEO safe limit
+    if len(title) > 60: title = title[:60]
     
-    # Body extraction
     body_text = "\n".join(lines[1:])
-    
-    # Paragraphs mein todna (HTML tags ke hisaab se ya double spacing)
-    # Hum <p> tags ke beech split karne ki koshish karenge ya newlines
     paragraphs = [p for p in body_text.split('\n\n') if len(p) > 50]
     
     return title, paragraphs
@@ -172,7 +156,6 @@ def generate_content(product):
 # --- 4. IMAGE & BUTTON INJECTION ---
 
 def create_promo_block(image_url, affiliate_link):
-    # BUTTON STYLE: Bold, 100% Capital, Red, Large
     btn_style = """
         background-color: #ff0000; 
         color: white !important; 
@@ -187,7 +170,6 @@ def create_promo_block(image_url, affiliate_link):
         box-shadow: 0 4px 8px rgba(0,0,0,0.2);
         font-family: Arial, sans-serif;
     """
-    
     img_style = "width: 100%; max-width: 700px; height: auto; border: 1px solid #ddd; margin-bottom: 15px;"
     
     html = f"""
@@ -206,21 +188,17 @@ def create_promo_block(image_url, affiliate_link):
 def merge_content(paragraphs, product):
     all_images = product.get('image_urls', [])
     
-    # Ensure at least 3 images via duplication if needed
     if len(all_images) < 3: selected_images = all_images * 4
     else: selected_images = list(all_images)
     
     random.shuffle(selected_images)
-    # Pick 3 to 4 images
     final_images = selected_images[:4]
     
     affiliate_link = product['affiliate_link']
     final_html = ""
     
-    # Logic: 1st Para -> Image 1 -> Distributed Images -> Rest Text
-    
     if paragraphs: 
-        final_html += f"<p>{paragraphs[0]}</p>" # Intro
+        final_html += f"<p>{paragraphs[0]}</p>" 
     
     if final_images:
         final_html += create_promo_block(final_images[0], affiliate_link)
@@ -229,20 +207,16 @@ def merge_content(paragraphs, product):
     remaining_paras = paragraphs[1:]
     
     if final_images and remaining_paras:
-        # Calculate Gap
         gap = max(2, len(remaining_paras) // (len(final_images) + 1))
         p_idx = 0
         
         for img in final_images:
-            # Add some paragraphs
             for _ in range(gap):
                 if p_idx < len(remaining_paras):
                     final_html += f"<p>{remaining_paras[p_idx]}</p>"
                     p_idx += 1
-            # Add Image Block
             final_html += create_promo_block(img, affiliate_link)
             
-        # Add remaining text
         while p_idx < len(remaining_paras):
             final_html += f"<p>{remaining_paras[p_idx]}</p>"
             p_idx += 1
@@ -251,32 +225,48 @@ def merge_content(paragraphs, product):
         
     return final_html
 
-# --- 5. PUBLISH TO BLOGGER ---
+# --- 5. PUBLISH TO BLOGGER (UPDATED AUTH) ---
 
 def post_to_blogger(title, content_html, labels):
-    creds_dict = json.loads(GOOGLE_CREDS)
-    creds = Credentials.from_authorized_user_info(creds_dict)
-    service = build('blogger', 'v3', credentials=creds)
+    print("🔑 Authenticating with Google using Split Secrets...")
     
-    body = {
-        "kind": "blogger#post",
-        "title": title,
-        "content": content_html,
-        "labels": labels  # Yahan Labels List Jayegi
+    # Manually constructing the credentials dictionary from Environment Variables
+    creds_info = {
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+        "refresh_token": REFRESH_TOKEN,
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "scopes": ["https://www.googleapis.com/auth/blogger"]
     }
-    
+
+    # Validate if secrets are present
+    if not CLIENT_ID or not CLIENT_SECRET or not REFRESH_TOKEN:
+        print("❌ ERROR: Missing one or more Google Secrets (CLIENT_ID, SECRET, REFRESH_TOKEN).")
+        return
+
     try:
+        creds = Credentials.from_authorized_user_info(creds_info)
+        service = build('blogger', 'v3', credentials=creds)
+        
+        body = {
+            "kind": "blogger#post",
+            "title": title,
+            "content": content_html,
+            "labels": labels 
+        }
+        
         posts = service.posts()
         result = posts.insert(blogId=BLOGGER_ID, body=body).execute()
-        print(f"✅ PUBLISHED! URL: {result['url']}")
+        print(f"✅ PUBLISHED SUCCESSFULLY! URL: {result['url']}")
         print(f"🏷️ Labels Used: {labels}")
+        
     except Exception as e:
         print(f"❌ Failed to publish: {e}")
 
 # --- MAIN EXECUTION ---
 if __name__ == "__main__":
     try:
-        # 1. Select Product (5 Day Check)
+        # 1. Select Product
         selected_file = get_eligible_product()
         print(f"🚀 Starting automation for: {selected_file}")
         
