@@ -3,8 +3,8 @@ import json
 import random
 import re
 import time
-import requests # Download/Upload ke liye
-import base64   # Imgbb ke liye zaroori
+import requests # Image processing ke liye zaroori
+import base64   # ImgBB upload ke liye zaroori
 from datetime import datetime
 from openai import OpenAI
 from googleapiclient.discovery import build
@@ -14,8 +14,9 @@ import socket
 
 # --- CONFIGURATION ---
 GITHUB_TOKEN = os.environ.get("GH_MARKETPLACE_TOKEN")
-# 👉 New Secret for Imgbb
-IMGBB_API_KEY = os.environ.get("IMGBB_API_KEY")
+
+# 👉 HARDCODED IMGBB API KEY (Direct Laga Diya Hai)
+IMGBB_API_KEY = "d1f8b09182b05dec467a15db11f072f6"
 
 # 👉 HARDCODED BLOG ID
 BLOGGER_ID = "8697171360337652733"
@@ -47,12 +48,8 @@ def get_smart_labels(product):
     all_labels = list(set(product_label + clean_niche + base_labels))
     return all_labels[:5]
 
-# 👉 NEW FEATURE: Upload to Imgbb (Reliable)
+# 👉 FEATURE: Upload to ImgBB (Using Hardcoded Key)
 def upload_to_imgbb(image_url):
-    if not IMGBB_API_KEY:
-        print("❌ ERROR: IMGBB_API_KEY secret is missing.")
-        return None
-        
     print(f"⬇️ Processing Image for Blog: {image_url[:40]}...")
     try:
         # 1. Download Image
@@ -63,13 +60,13 @@ def upload_to_imgbb(image_url):
             print(f"❌ Download Failed. Status: {img_resp.status_code}")
             return None
             
-        # 2. Convert to Base64 (Imgbb needs this)
+        # 2. Convert to Base64
         img_base64 = base64.b64encode(img_resp.content).decode('utf-8')
 
-        # 3. Upload to Imgbb
+        # 3. Upload to ImgBB
         url = "https://api.imgbb.com/1/upload"
         payload = {
-            'key': IMGBB_API_KEY,
+            'key': IMGBB_API_KEY, # Hardcoded key use ho rahi hai
             'image': img_base64,
         }
         
@@ -79,13 +76,13 @@ def upload_to_imgbb(image_url):
             data = upload_resp.json()
             if data['success']:
                 new_url = data['data']['url']
-                print(f"✅ Image Ready (Imgbb): {new_url}")
+                print(f"✅ Image Ready (ImgBB): {new_url}")
                 return new_url
             else:
-                print(f"❌ Imgbb Upload Failed: {data['error']['message']}")
+                print(f"❌ ImgBB Error: {data['error']['message']}")
                 return None
         else:
-            print(f"❌ Imgbb Failed. Status: {upload_resp.status_code}")
+            print(f"❌ Upload Failed. Status: {upload_resp.status_code}")
             return None
             
     except Exception as e:
@@ -140,7 +137,7 @@ def update_history(filename):
 def generate_content(product):
     print(f"✍️ Writing 1200+ word review for: {product['product_name']}...")
     
-    # 👉 SYSTEM PROMPT (SAFE + LONG FORM)
+    # 👉 SYSTEM PROMPT (SAFE + LONG FORM + HUMANIZED)
     system_prompt = """
     You are a professional Health Affiliate Content Writer.
     Your goal is to write a COMPREHENSIVE (1200–1800 words), SAFE, and HONEST review.
@@ -225,8 +222,8 @@ def generate_content(product):
                 {"role": "user", "content": user_prompt}
             ],
             model="DeepSeek-R1",
-            temperature=1.0,
-            max_tokens=5000 
+            temperature=1.0, # High creativity for length
+            max_tokens=5000  # Allowed max length
         )
         raw_text = response.choices[0].message.content
         cleaned_text = clean_text_for_blogger(raw_text)
@@ -256,7 +253,7 @@ def generate_content(product):
         print(f"❌ AI Error: {e}")
         return f"Review: {product['product_name']}", ["Content generation failed."]
 
-# --- 4. IMAGE & BUTTON INJECTION (FEATURE YOU WANTED) ---
+# --- 4. IMAGE & BUTTON INJECTION (AMAZON STYLE) ---
 
 def create_promo_block(image_url, affiliate_link):
     # 👉 AMAZON STYLE BUTTON (Yellow/Orange)
@@ -302,7 +299,7 @@ def merge_content(title, paragraphs, product):
     num_images_to_use = random.randint(2, 3)
     selected_urls = random.sample(all_image_urls, min(len(all_image_urls), num_images_to_use))
     
-    # 👉 UPLOAD TO IMGBB (Reliable)
+    # 👉 UPLOAD TO IMGBB (Direct)
     ready_to_use_images = []
     for url in selected_urls:
         imgbb_url = upload_to_imgbb(url)
