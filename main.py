@@ -8,14 +8,20 @@ from openai import OpenAI
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 
-# --- CONFIGURATION (UPDATED FOR YOUR SECRETS) ---
+# --- CONFIGURATION (UPDATED) ---
 GITHUB_TOKEN = os.environ.get("GH_MARKETPLACE_TOKEN") 
-BLOGGER_ID = os.environ.get("BLOGGER_ID") # Ye BLOGGER_BLOG_ID se aa raha hai
+
+# 👉 Yahan hum .strip() laga rahe hain taaki Space hat jaye
+raw_blog_id = os.environ.get("BLOGGER_ID")
+BLOGGER_ID = raw_blog_id.strip().replace('"', '') if raw_blog_id else None 
 
 # New Authentication Variables
 CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 REFRESH_TOKEN = os.environ.get("GOOGLE_REFRESH_TOKEN")
+
+# Debugging Print (Error pakadne ke liye)
+print(f"DEBUG: Using Blog ID: '{BLOGGER_ID}'")
 
 # DeepSeek Client
 client = OpenAI(
