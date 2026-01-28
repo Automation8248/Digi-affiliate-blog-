@@ -3,7 +3,8 @@ import json
 import random
 import re
 import time
-import requests # Image processing ke liye zaroori
+import requests # Download/Upload ke liye
+import base64   # Imgbb ke liye zaroori
 from datetime import datetime
 from openai import OpenAI
 from googleapiclient.discovery import build
@@ -13,6 +14,8 @@ import socket
 
 # --- CONFIGURATION ---
 GITHUB_TOKEN = os.environ.get("GH_MARKETPLACE_TOKEN")
+# 👉 New Secret for Imgbb
+IMGBB_API_KEY = os.environ.get("IMGBB_API_KEY")
 
 # 👉 HARDCODED BLOG ID
 BLOGGER_ID = "8697171360337652733"
@@ -44,8 +47,12 @@ def get_smart_labels(product):
     all_labels = list(set(product_label + clean_niche + base_labels))
     return all_labels[:5]
 
-# 👉 FEATURE: Upload to CATBOX (Images Fix)
-def upload_to_catbox(image_url):
+# 👉 NEW FEATURE: Upload to Imgbb (Reliable)
+def upload_to_imgbb(image_url):
+    if not IMGBB_API_KEY:
+        print("❌ ERROR: IMGBB_API_KEY secret is missing.")
+        return None
+        
     print(f"⬇️ Processing Image for Blog: {image_url[:40]}...")
     try:
         # 1. Download Image
@@ -56,21 +63,29 @@ def upload_to_catbox(image_url):
             print(f"❌ Download Failed. Status: {img_resp.status_code}")
             return None
             
-        # 2. Upload to Catbox (Free Host)
-        catbox_api = "https://catbox.moe/user/api.php"
-        data = {'reqtype': 'fileupload'}
-        files = {
-            'fileToUpload': ('image.jpg', img_resp.content, 'image/jpeg')
+        # 2. Convert to Base64 (Imgbb needs this)
+        img_base64 = base64.b64encode(img_resp.content).decode('utf-8')
+
+        # 3. Upload to Imgbb
+        url = "https://api.imgbb.com/1/upload"
+        payload = {
+            'key': IMGBB_API_KEY,
+            'image': img_base64,
         }
         
-        upload_resp = requests.post(catbox_api, data=data, files=files, timeout=45)
+        upload_resp = requests.post(url, data=payload, timeout=45)
         
         if upload_resp.status_code == 200:
-            new_url = upload_resp.text.strip()
-            print(f"✅ Image Ready: {new_url}")
-            return new_url
+            data = upload_resp.json()
+            if data['success']:
+                new_url = data['data']['url']
+                print(f"✅ Image Ready (Imgbb): {new_url}")
+                return new_url
+            else:
+                print(f"❌ Imgbb Upload Failed: {data['error']['message']}")
+                return None
         else:
-            print(f"❌ Upload Failed: {upload_resp.text}")
+            print(f"❌ Imgbb Failed. Status: {upload_resp.status_code}")
             return None
             
     except Exception as e:
@@ -210,8 +225,8 @@ def generate_content(product):
                 {"role": "user", "content": user_prompt}
             ],
             model="DeepSeek-R1",
-            temperature=1.0, # High creativity for length
-            max_tokens=5000  # Allowed max length
+            temperature=1.0,
+            max_tokens=5000 
         )
         raw_text = response.choices[0].message.content
         cleaned_text = clean_text_for_blogger(raw_text)
@@ -227,11 +242,9 @@ def generate_content(product):
             
         title = title.replace('"', '').replace('*', '')
         
-        # Split logic: Keep HTML tags intact
         paragraphs = [p.strip() for p in re.split(r'</p>|\n\n', body) if len(p.strip()) > 20]
         cleaned_paras = []
         for p in paragraphs:
-            # Re-wrap if needed
             if not p.startswith('<') and not p.startswith('Consider'): 
                  p = f"<p>{p}</p>"
             elif p.startswith('<p>') and not p.endswith('</p>'):
@@ -265,7 +278,6 @@ def create_promo_block(image_url, affiliate_link):
     """
     img_style = "width: 100%; max-width: 600px; height: auto; border: 1px solid #ddd; margin-bottom: 15px; border-radius: 8px;"
     
-    # Image + Button + Affiliate Link Wrapper
     html = f"""
     <div style="text-align: center; margin: 40px 0; padding: 20px; background-color: #fdfdfd; border: 1px solid #eee;">
         <a href="{affiliate_link}" target="_blank" rel="nofollow">
@@ -287,53 +299,44 @@ def merge_content(title, paragraphs, product):
         print("⚠️ No image URLs found.")
         all_image_urls = []
 
-    # Select 2 or 3 random URLs
     num_images_to_use = random.randint(2, 3)
     selected_urls = random.sample(all_image_urls, min(len(all_image_urls), num_images_to_use))
     
-    # 👉 UPLOAD TO CATBOX (Ensures images appear)
+    # 👉 UPLOAD TO IMGBB (Reliable)
     ready_to_use_images = []
     for url in selected_urls:
-        catbox_url = upload_to_catbox(url)
-        if catbox_url:
-            ready_to_use_images.append(catbox_url)
+        imgbb_url = upload_to_imgbb(url)
+        if imgbb_url:
+            ready_to_use_images.append(imgbb_url)
 
     print(f"✅ Images Ready to Inject: {len(ready_to_use_images)}")
     
     affiliate_link = product['affiliate_link']
     final_html = ""
     
-    # 1. Add Title in Body
     final_html += f"<h1 style='text-align: center; color: #2c3e50; margin-bottom: 25px;'>{title}</h1>"
     
-    # 2. Add First Paragraph
     if paragraphs:
         final_html += paragraphs[0]
-        if len(paragraphs) > 1: final_html += paragraphs[1] # Add 2 paras before first image
+        if len(paragraphs) > 1: final_html += paragraphs[1]
         remaining_paras = paragraphs[2:]
     else:
         remaining_paras = []
         
-    # 3. Add First Image & Button
     if ready_to_use_images:
         final_html += create_promo_block(ready_to_use_images.pop(0), affiliate_link)
         
-    # 4. Smart Mix: Distribute remaining images evenly
     if ready_to_use_images and remaining_paras:
-        # Calculate gap (e.g., insert image every 4 paragraphs)
         gap = max(3, len(remaining_paras) // (len(ready_to_use_images) + 1))
         idx = 0
         
         for img_url in ready_to_use_images:
-            # Add text blocks
             for _ in range(gap):
                 if idx < len(remaining_paras):
                     final_html += remaining_paras[idx]
                     idx += 1
-            # Add Image Block
             final_html += create_promo_block(img_url, affiliate_link)
             
-        # Add rest of the text
         while idx < len(remaining_paras):
             final_html += remaining_paras[idx]
             idx += 1
@@ -360,13 +363,11 @@ def post_to_blogger(title, content_html, labels):
     }
 
     try:
-        # Increase timeout for upload
         socket.setdefaulttimeout(120) 
 
         creds = Credentials.from_authorized_user_info(creds_info)
         service = build('blogger', 'v3', credentials=creds)
         
-        # Professional Styling Container
         final_styled_body = f"""
         <div style="font-family: Verdana, sans-serif; font-size: 16px; line-height: 1.8; color: #222; background-color: #fff; padding: 20px; max-width: 800px; margin: auto;">
             {content_html}
@@ -407,14 +408,12 @@ if __name__ == "__main__":
             
         seo_labels = get_smart_labels(product_data)
         
-        # Generates Long-Form Content
         title_text, paras = generate_content(product_data)
         
         if not paras:
             print("❌ Error: No content generated.")
             exit()
             
-        # Merges Content with Catbox Images & Buttons
         final_blog_post = merge_content(title_text, paras, product_data)
         
         post_to_blogger(title_text, final_blog_post, seo_labels)
