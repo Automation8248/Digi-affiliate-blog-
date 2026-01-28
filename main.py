@@ -30,12 +30,23 @@ client = OpenAI(
 
 def clean_text_for_blogger(text):
     text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+    # Remove markdown formatting characters
     text = text.replace('**', '').replace('*', '').replace('##', '').replace('#', '')
-    text = text.replace('Title:', '').strip()
-    return text
+    # Remove "Title:" prefix if AI adds it
+    text = re.sub(r'^Title:\s*', '', text, flags=re.IGNORECASE)
+    return text.strip()
 
 def get_smart_labels(product):
-    return ["Health", "Review", "Wellness", product['product_name']]
+    # SEO Optimized Labels (Mix of Niche + Product Name + Generic)
+    niche_keywords = product.get('niche', 'Health').split('&')
+    clean_niche = [w.strip() for w in niche_keywords]
+    
+    base_labels = ["Health Tips", "Wellness Review", "Best Supplements"]
+    product_label = [product['product_name']]
+    
+    # Combine and Select 4-5 Unique Labels
+    all_labels = list(set(product_label + clean_niche + base_labels))
+    return all_labels[:5]
 
 # --- 2. MEMORY & PRODUCT SELECTION ---
 
@@ -80,18 +91,26 @@ def update_history(filename):
     history[product_name] = datetime.now().strftime("%Y-%m-%d")
     with open('history.json', 'w') as f: json.dump(history, f, indent=4)
 
-# --- 3. AI CONTENT GENERATION ---
+# --- 3. AI CONTENT GENERATION (HOOK TITLES) ---
 
 def generate_content(product):
     print(f"✍️ Writing article for: {product['product_name']}...")
     
     system_prompt = """
-    Write a 1000+ word SEO blog post using HTML tags (<p>, <h2>, <ul>, <li>).
-    Do NOT use Markdown. Do NOT use Title tags inside body.
-    Structure: Intro, Problem, Solution, Ingredients, Benefits, Conclusion.
+    You are a professional Click-Through Rate (CTR) Expert and Health Copywriter.
+    
+    TASK:
+    1. Create a viral, high-converting "Hook Title" (No product name first, focus on benefit/curiosity).
+       Example: "How to Reset Your Metabolism in 5 Days" (Not "Sumatra Slim Belly Tonic Review").
+    2. Write a 1000+ word blog post in HTML format (<p>, <h2>, <ul>, <li>).
+    
+    STRICT OUTPUT FORMAT:
+    Title: [Insert Hook Title Here]
+    |||
+    [Insert Body Content Here]
     """
     
-    user_prompt = f"Write a review for '{product['product_name']}' ({product['niche']})."
+    user_prompt = f"Write a review for '{product['product_name']}' in the niche '{product['niche']}'."
 
     try:
         response = client.chat.completions.create(
@@ -106,59 +125,106 @@ def generate_content(product):
         raw_text = response.choices[0].message.content
         cleaned_text = clean_text_for_blogger(raw_text)
         
-        lines = cleaned_text.split('\n')
-        title = lines[0][:60] if lines else f"{product['product_name']} Review"
-        body_text = "\n".join(lines[1:])
-        paragraphs = [p for p in body_text.split('\n\n') if len(p) > 20]
+        # Split Title and Body using the separator |||
+        if "|||" in cleaned_text:
+            parts = cleaned_text.split("|||")
+            title = parts[0].replace("Title:", "").strip()
+            body = parts[1].strip()
+        else:
+            # Fallback
+            lines = cleaned_text.split('\n')
+            title = lines[0].replace("Title:", "").strip()
+            body = "\n".join(lines[1:])
+            
+        # Ensure Title is clean
+        title = title.replace('"', '').replace('*', '')
+        
+        # Break body into paragraphs
+        paragraphs = [p for p in body.split('\n\n') if len(p) > 20]
         
         return title, paragraphs
     except Exception as e:
         print(f"❌ AI Error: {e}")
-        return f"{product['product_name']} Review", ["Content generation failed."]
+        return f"Review: {product['product_name']}", ["Content generation failed."]
 
-# --- 4. IMAGE & BUTTON INJECTION ---
+# --- 4. IMAGE & BUTTON INJECTION (AMAZON STYLE) ---
 
 def create_promo_block(image_url, affiliate_link):
-    btn_style = "background-color: #d32f2f; color: white !important; padding: 16px 25px; font-weight: bold; text-decoration: none; border-radius: 5px; display: inline-block; margin: 20px 0; font-size: 18px; text-transform: uppercase;"
-    img_style = "width: 100%; max-width: 600px; height: auto; border: 1px solid #ddd; border-radius: 8px;"
+    # Amazon Style Button (Orange/Yellow Gradient)
+    btn_style = """
+        background: linear-gradient(to bottom, #f8c147 0%, #f7dfa5 100%);
+        background-color: #f0c14b;
+        border: 1px solid #a88734;
+        color: #111 !important;
+        padding: 10px 20px;
+        font-size: 16px;
+        font-weight: bold;
+        text-decoration: none;
+        border-radius: 3px;
+        display: inline-block;
+        margin: 15px 0;
+        cursor: pointer;
+        box-shadow: 0 1px 0 rgba(255,255,255,0.4) inset;
+    """
     
+    img_style = "width: 100%; max-width: 600px; height: auto; border: 1px solid #eee; margin-bottom: 10px;"
+    
+    # Image is clickable (Linked to Affiliate)
     html = f"""
     <div style="text-align: center; margin: 30px 0;">
-        <a href="{affiliate_link}" rel="nofollow"><img src="{image_url}" style="{img_style}"></a><br>
-        <a href="{affiliate_link}" rel="nofollow" style="{btn_style}">BUY NOW (OFFICIAL SITE)</a>
+        <a href="{affiliate_link}" target="_blank" rel="nofollow">
+            <img src="{image_url}" style="{img_style}" alt="Product Image">
+        </a>
+        <br>
+        <a href="{affiliate_link}" target="_blank" rel="nofollow" style="{btn_style}">
+            BUY NOW
+        </a>
     </div>
     """
     return html
 
-def merge_content(paragraphs, product):
+def merge_content(title, paragraphs, product):
     all_images = product.get('image_urls', [])
     if not all_images: all_images = []
     
-    # Safe logic if images are missing
-    if len(all_images) < 1: 
-        return "".join([f"<p>{p}</p>" for p in paragraphs])
-
-    selected_images = (all_images * 4)[:4]
-    random.shuffle(selected_images)
+    # Logic: Images ko shuffle (mix) kar do sequence badalne ke liye
+    selected_images = list(all_images)
+    if len(selected_images) < 4:
+         selected_images = (selected_images * 4)[:4] # Agar kam hain to repeat karo
+    
+    random.shuffle(selected_images) # Random Sequence (Kabhi upar, kabhi niche)
     
     affiliate_link = product['affiliate_link']
     final_html = ""
     
-    if paragraphs: final_html += f"<p>{paragraphs[0]}</p>"
+    # 1. Add H1 Title inside Body (Same as Blog Title)
+    final_html += f"<h1 style='text-align: center; color: #2c3e50;'>{title}</h1>"
     
+    # 2. Add First Paragraph
+    if paragraphs:
+        final_html += f"<p>{paragraphs[0]}</p>"
+        remaining_paras = paragraphs[1:]
+    else:
+        remaining_paras = []
+        
+    # 3. Add First Image & Button immediately after 1st Paragraph
     if selected_images:
         final_html += create_promo_block(selected_images.pop(0), affiliate_link)
-    
-    remaining_paras = paragraphs[1:]
+        
+    # 4. Mix remaining images in the rest of the text
     if selected_images and remaining_paras:
+        # Calculate gap to distribute images evenly
         gap = max(2, len(remaining_paras) // (len(selected_images) + 1))
         idx = 0
+        
         for img in selected_images:
             for _ in range(gap):
                 if idx < len(remaining_paras):
                     final_html += f"<p>{remaining_paras[idx]}</p>"
                     idx += 1
             final_html += create_promo_block(img, affiliate_link)
+            
+        # Add remaining text
         while idx < len(remaining_paras):
             final_html += f"<p>{remaining_paras[idx]}</p>"
             idx += 1
@@ -167,7 +233,7 @@ def merge_content(paragraphs, product):
         
     return final_html
 
-# --- 5. PUBLISH TO BLOGGER (WITH HTML STYLING) ---
+# --- 5. PUBLISH TO BLOGGER ---
 
 def post_to_blogger(title, content_html, labels):
     print(f"🔑 Authenticating... (Target Blog ID: {BLOGGER_ID})")
@@ -188,10 +254,9 @@ def post_to_blogger(title, content_html, labels):
         creds = Credentials.from_authorized_user_info(creds_info)
         service = build('blogger', 'v3', credentials=creds)
         
-        # 👉 HERE IS THE HTML FORMAT LOGIC (UPDATED)
-        # Hum pure content ko ek Professional <div> mein wrap kar rahe hain
+        # Wrap content in a professional div
         final_styled_body = f"""
-        <div style="font-family: Arial, sans-serif; font-size: 16px; line-height: 1.6; color: #333; background-color: #fff; padding: 10px;">
+        <div style="font-family: Verdana, sans-serif; font-size: 16px; line-height: 1.6; color: #333; background-color: #fff; padding: 10px;">
             {content_html}
             <br><hr>
             <p style="font-size: 12px; color: #666; text-align: center; margin-top: 20px;">
@@ -202,14 +267,15 @@ def post_to_blogger(title, content_html, labels):
         
         body = {
             "kind": "blogger#post",
-            "title": title,
-            "content": final_styled_body, # Styled HTML Bheja ja raha hai
+            "title": title, # Clean Hook Title
+            "content": final_styled_body,
             "labels": labels 
         }
         
         posts = service.posts()
         result = posts.insert(blogId=BLOGGER_ID, body=body).execute()
-        print(f"✅ SUCCESS! View Post: {result['url']}")
+        print(f"✅ SUCCESS! Published: '{title}'")
+        print(f"🔗 URL: {result['url']}")
         
     except HttpError as e:
         print(f"❌ HTTP Error: {e}")
@@ -227,17 +293,19 @@ if __name__ == "__main__":
             product_data = json.load(f)
             
         seo_labels = get_smart_labels(product_data)
+        
+        # Generate Content (Returns Title and Paragraphs separately)
         title_text, paras = generate_content(product_data)
         
         if not paras:
             print("❌ Error: No content generated.")
             exit()
             
-        final_blog_post = merge_content(paras, product_data)
+        # Merge Content (Adds Images, Buttons, and Title inside body)
+        final_blog_post = merge_content(title_text, paras, product_data)
         
-        # Post with HTML Styling
+        # Publish
         post_to_blogger(title_text, final_blog_post, seo_labels)
-        
         update_history(selected_file)
         
     except Exception as e:
