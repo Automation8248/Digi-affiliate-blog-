@@ -2,17 +2,14 @@ name: Daily Health Blog Automation
 
 on:
   schedule:
-    # Ye time set hai: Rozana 10:00 AM UTC (India mein dopahar ke 3:30 baje ke aas-paas)
-    - cron: '0 10 * * *'
-  
-  # Ye manual button hai, taaki aap jab chahein tab "Run Workflow" click karke test kar sakein
+    - cron: '0 10 * * *' # Daily 10 AM UTC
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
-    # IMP: Ye permission zaroori hai taaki script 'history.json' ko edit karke save kar sake
+    
+    # Permission to write history.json
     permissions:
       contents: write
 
@@ -23,27 +20,30 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.10' # Python version updated to fix warning
 
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2 openai
+          pip install google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2 openai requests
 
       - name: Run Automation Script
         env:
-          # Ye Secrets aapko GitHub Settings -> Secrets and Variables -> Actions mein daalne hain
+          # --- AI KEY (Existing) ---
           GH_MARKETPLACE_TOKEN: ${{ secrets.GH_MARKETPLACE_TOKEN }}
-          BLOGGER_ID: ${{ secrets.BLOGGER_ID }}
-          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+
+          # --- YOUR NEW SECRETS (From Screenshot) ---
+          # Hum yahan map kar rahe hain taaki Python padh sake
+          BLOGGER_ID: ${{ secrets.BLOGGER_BLOG_ID }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
         run: python main.py
 
       - name: Commit and Push History (Save Memory)
         run: |
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
-          # Sirf history file ko add karenge
           git add history.json
-          # Agar file update hui hai to commit karega, nahi to error nahi dega
           git commit -m "Auto-update product history log [skip ci]" || echo "No changes to commit"
           git push
