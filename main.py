@@ -3,8 +3,6 @@ import json
 import random
 import re
 import time
-import requests # Image processing ke liye zaroori
-import base64   # ImgBB upload ke liye zaroori
 from datetime import datetime
 from openai import OpenAI
 from googleapiclient.discovery import build
@@ -15,10 +13,7 @@ import socket
 # --- CONFIGURATION ---
 GITHUB_TOKEN = os.environ.get("GH_MARKETPLACE_TOKEN")
 
-# 👉 HARDCODED IMGBB API KEY (Direct Laga Diya Hai)
-IMGBB_API_KEY = "d1f8b09182b05dec467a15db11f072f6"
-
-# 👉 HARDCODED BLOG ID
+# 👉 HARDCODED BLOG ID (Aapki ID Fixed Hai)
 BLOGGER_ID = "8697171360337652733"
 
 # Authentication Variables
@@ -47,47 +42,6 @@ def get_smart_labels(product):
     product_label = [product['product_name']]
     all_labels = list(set(product_label + clean_niche + base_labels))
     return all_labels[:5]
-
-# 👉 FEATURE: Upload to ImgBB (Using Hardcoded Key)
-def upload_to_imgbb(image_url):
-    print(f"⬇️ Processing Image for Blog: {image_url[:40]}...")
-    try:
-        # 1. Download Image
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        img_resp = requests.get(image_url, headers=headers, timeout=20)
-        
-        if img_resp.status_code != 200:
-            print(f"❌ Download Failed. Status: {img_resp.status_code}")
-            return None
-            
-        # 2. Convert to Base64
-        img_base64 = base64.b64encode(img_resp.content).decode('utf-8')
-
-        # 3. Upload to ImgBB
-        url = "https://api.imgbb.com/1/upload"
-        payload = {
-            'key': IMGBB_API_KEY, # Hardcoded key use ho rahi hai
-            'image': img_base64,
-        }
-        
-        upload_resp = requests.post(url, data=payload, timeout=45)
-        
-        if upload_resp.status_code == 200:
-            data = upload_resp.json()
-            if data['success']:
-                new_url = data['data']['url']
-                print(f"✅ Image Ready (ImgBB): {new_url}")
-                return new_url
-            else:
-                print(f"❌ ImgBB Error: {data['error']['message']}")
-                return None
-        else:
-            print(f"❌ Upload Failed. Status: {upload_resp.status_code}")
-            return None
-            
-    except Exception as e:
-        print(f"❌ Image Error: {e}")
-        return None
 
 # --- 2. MEMORY & PRODUCT SELECTION ---
 
@@ -132,48 +86,49 @@ def update_history(filename):
     history[product_name] = datetime.now().strftime("%Y-%m-%d")
     with open('history.json', 'w') as f: json.dump(history, f, indent=4)
 
-# --- 3. AI CONTENT GENERATION (SAFE & LONG FORM) ---
+# --- 3. AI CONTENT GENERATION (1200-1600 WORDS) ---
 
 def generate_content(product):
     print(f"✍️ Writing 1200+ word review for: {product['product_name']}...")
     
-    # 👉 SYSTEM PROMPT (SAFE + LONG FORM + HUMANIZED)
+    # 👉 PROMPT: Long Form + Safe + Human Tone
     system_prompt = """
-    You are a professional Health Affiliate Content Writer.
-    Your goal is to write a COMPREHENSIVE (1200–1800 words), SAFE, and HONEST review.
+    You are a friendly, empathetic health enthusiast sharing honest advice with a neighbor. 
+    You are NOT a salesperson.
+    
+    Your goal is to write a MASSIVE, COMPREHENSIVE (1200–1600 words), SAFE, and HONEST review.
 
     *** STRICT RULES (TO AVOID BAN & RANK HIGH) ***
-    1. WORD COUNT: The article MUST be long, detailed, and cover every aspect. Aim for 1500 words.
-    2. LANGUAGE: Simple, clear English (Grade 7-8 level).
+    1. WORD COUNT: Aim for 1400-1500 words. Go deep into details.
+    2. LANGUAGE: Simple, clear English (Grade 7 level).
     3. TONE: Informational, neutral, and helpful. NEVER aggressive.
     4. CLAIMS: NEVER say "cure", "treat", "fix". Use "supports", "may help".
     5. FORMATTING: Use ONLY clean HTML tags (<p>, <h2>, <ul>, <li>, <strong>).
-    6. STRUCTURE: Mix education with review.
 
-    *** REQUIRED STRUCTURE (EXPAND EACH SECTION) ***
+    *** ARTICLE STRUCTURE (EXPAND EACH SECTION) ***
 
     Title: [Curiosity-based, safe title. Do NOT start with Product Name]
     |||
     <h2>[Heading: Describe the Core Problem deeply]</h2>
-    <p>[Write 2-3 detailed paragraphs about the struggle/problem]</p>
+    <p>[Write 3 detailed paragraphs about the struggle/problem. Show empathy.]</p>
 
     <h2>Why This Issue Happens (The Science)</h2>
-    <p>[Explain the root causes in simple terms - 2 paragraphs]</p>
+    <p>[Explain root causes in simple terms - 2-3 paragraphs]</p>
 
     <h2>General Ways to Support Health (Lifestyle)</h2>
-    <p>[Discuss diet, sleep, and habits first - 2 paragraphs]</p>
+    <p>[Discuss diet, sleep, and habits first - 3 paragraphs. Do NOT mention product yet.]</p>
 
-    <h2>Introducing [Product Name]: A Potential Solution?</h2>
+    <h2>An Option People Are Talking About: [Product Name]</h2>
     <p>[Introduce the product gently. What is the story behind it?]</p>
 
     <h2>How [Product Name] Is Designed to Work</h2>
-    <p>[Explain the mechanism/working logic in detail]</p>
+    <p>[Explain the working logic in detail - 2 paragraphs]</p>
 
-    <h2>Key Ingredients Analysis</h2>
+    <h2>Key Ingredients Breakdown</h2>
     <ul>
-    <li><strong>Ingredient 1:</strong> What it does (softly).</li>
-    <li><strong>Ingredient 2:</strong> What it does (softly).</li>
-    <li><strong>Ingredient 3:</strong> What it does (softly).</li>
+    <li><strong>Ingredient 1:</strong> Detailed explanation of what it does.</li>
+    <li><strong>Ingredient 2:</strong> Detailed explanation of what it does.</li>
+    <li><strong>Ingredient 3:</strong> Detailed explanation of what it does.</li>
     <li>(Add more ingredients)</li>
     </ul>
 
@@ -183,7 +138,6 @@ def generate_content(product):
     <li>[Benefit 2 - Detailed explanation]</li>
     <li>[Benefit 3 - Detailed explanation]</li>
     <li>[Benefit 4 - Detailed explanation]</li>
-    <li>[Benefit 5 - Detailed explanation]</li>
     </ul>
 
     <h2>Pros and Cons (Honest Look)</h2>
@@ -203,9 +157,10 @@ def generate_content(product):
     <p>[Define the audience clearly]</p>
 
     <h2>Final Verdict</h2>
-    <p>[Summarize everything. Add a soft call to action to check the official site.]</p>
+    <p>[Summarize everything warmly. Add a soft call to action.]</p>
 
     <h2>Frequently Asked Questions</h2>
+    <p><strong>Q: ...?</strong><br>A: ...</p>
     <p><strong>Q: ...?</strong><br>A: ...</p>
     <p><strong>Q: ...?</strong><br>A: ...</p>
     <p><strong>Q: ...?</strong><br>A: ...</p>
@@ -222,8 +177,8 @@ def generate_content(product):
                 {"role": "user", "content": user_prompt}
             ],
             model="DeepSeek-R1",
-            temperature=1.0, # High creativity for length
-            max_tokens=5000  # Allowed max length
+            temperature=1.0, 
+            max_tokens=5000 
         )
         raw_text = response.choices[0].message.content
         cleaned_text = clean_text_for_blogger(raw_text)
@@ -253,10 +208,10 @@ def generate_content(product):
         print(f"❌ AI Error: {e}")
         return f"Review: {product['product_name']}", ["Content generation failed."]
 
-# --- 4. IMAGE & BUTTON INJECTION (AMAZON STYLE) ---
+# --- 4. IMAGE & BUTTON INJECTION (IMAGES + BUTTONS + LINKS) ---
 
 def create_promo_block(image_url, affiliate_link):
-    # 👉 AMAZON STYLE BUTTON (Yellow/Orange)
+    # 👉 AMAZON STYLE BUTTON
     btn_style = """
         background: linear-gradient(to bottom, #f8c147 0%, #f7dfa5 100%);
         background-color: #f0c14b;
@@ -275,6 +230,7 @@ def create_promo_block(image_url, affiliate_link):
     """
     img_style = "width: 100%; max-width: 600px; height: auto; border: 1px solid #ddd; margin-bottom: 15px; border-radius: 8px;"
     
+    # Image aur Button Dono Link Wale
     html = f"""
     <div style="text-align: center; margin: 40px 0; padding: 20px; background-color: #fdfdfd; border: 1px solid #eee;">
         <a href="{affiliate_link}" target="_blank" rel="nofollow">
@@ -296,23 +252,25 @@ def merge_content(title, paragraphs, product):
         print("⚠️ No image URLs found.")
         all_image_urls = []
 
+    # 👉 LOGIC: Select 2 to 3 Images Randomly
     num_images_to_use = random.randint(2, 3)
-    selected_urls = random.sample(all_image_urls, min(len(all_image_urls), num_images_to_use))
     
-    # 👉 UPLOAD TO IMGBB (Direct)
-    ready_to_use_images = []
-    for url in selected_urls:
-        imgbb_url = upload_to_imgbb(url)
-        if imgbb_url:
-            ready_to_use_images.append(imgbb_url)
+    # Agar images kam hain, to repeat hone do, warna sample lo
+    if len(all_image_urls) < num_images_to_use:
+        ready_to_use_images = all_image_urls * 2
+        ready_to_use_images = ready_to_use_images[:num_images_to_use]
+    else:
+        ready_to_use_images = random.sample(all_image_urls, num_images_to_use)
 
-    print(f"✅ Images Ready to Inject: {len(ready_to_use_images)}")
+    print(f"✅ Selected {len(ready_to_use_images)} Images for this post.")
     
     affiliate_link = product['affiliate_link']
     final_html = ""
     
+    # Title
     final_html += f"<h1 style='text-align: center; color: #2c3e50; margin-bottom: 25px;'>{title}</h1>"
     
+    # Intro Text
     if paragraphs:
         final_html += paragraphs[0]
         if len(paragraphs) > 1: final_html += paragraphs[1]
@@ -320,20 +278,25 @@ def merge_content(title, paragraphs, product):
     else:
         remaining_paras = []
         
+    # First Image & Button
     if ready_to_use_images:
         final_html += create_promo_block(ready_to_use_images.pop(0), affiliate_link)
         
+    # Distribute remaining images evenly
     if ready_to_use_images and remaining_paras:
         gap = max(3, len(remaining_paras) // (len(ready_to_use_images) + 1))
         idx = 0
         
         for img_url in ready_to_use_images:
+            # Text blocks
             for _ in range(gap):
                 if idx < len(remaining_paras):
                     final_html += remaining_paras[idx]
                     idx += 1
+            # Image Block
             final_html += create_promo_block(img_url, affiliate_link)
             
+        # Remaining Text
         while idx < len(remaining_paras):
             final_html += remaining_paras[idx]
             idx += 1
@@ -365,6 +328,7 @@ def post_to_blogger(title, content_html, labels):
         creds = Credentials.from_authorized_user_info(creds_info)
         service = build('blogger', 'v3', credentials=creds)
         
+        # Professional Layout
         final_styled_body = f"""
         <div style="font-family: Verdana, sans-serif; font-size: 16px; line-height: 1.8; color: #222; background-color: #fff; padding: 20px; max-width: 800px; margin: auto;">
             {content_html}
@@ -405,14 +369,17 @@ if __name__ == "__main__":
             
         seo_labels = get_smart_labels(product_data)
         
+        # 1. Content Generation (1200+ Words)
         title_text, paras = generate_content(product_data)
         
         if not paras:
             print("❌ Error: No content generated.")
             exit()
             
+        # 2. Merging (Images + Buttons)
         final_blog_post = merge_content(title_text, paras, product_data)
         
+        # 3. Publish
         post_to_blogger(title_text, final_blog_post, seo_labels)
         update_history(selected_file)
         
