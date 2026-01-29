@@ -1,4 +1,4 @@
-name: Daily Health Blog Automation
+name: Health Blog 
 
 on:
   schedule:
