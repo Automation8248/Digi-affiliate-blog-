@@ -13,7 +13,7 @@ import socket
 # --- CONFIGURATION ---
 GITHUB_TOKEN = os.environ.get("GH_MARKETPLACE_TOKEN")
 
-# 👉 HARDCODED BLOG ID (Aapki ID Fixed Hai)
+# 👉 HARDCODED BLOG ID
 BLOGGER_ID = "8697171360337652733"
 
 # Authentication Variables
@@ -38,7 +38,7 @@ def clean_text_for_blogger(text):
 def get_smart_labels(product):
     niche_keywords = product.get('niche', 'Health').split('&')
     clean_niche = [w.strip() for w in niche_keywords if len(w.strip()) > 3]
-    base_labels = ["Health Review", "Wellness Tips", "Honest Reviews"]
+    base_labels = ["Health Tips", "Wellness Guide", "Product Reviews"]
     product_label = [product['product_name']]
     all_labels = list(set(product_label + clean_niche + base_labels))
     return all_labels[:5]
@@ -86,89 +86,86 @@ def update_history(filename):
     history[product_name] = datetime.now().strftime("%Y-%m-%d")
     with open('history.json', 'w') as f: json.dump(history, f, indent=4)
 
-# --- 3. AI CONTENT GENERATION (1200-1600 WORDS) ---
+# --- 3. AI CONTENT GENERATION (ACCOUNT SAFETY MODE) ---
 
 def generate_content(product):
-    print(f"✍️ Writing 1200+ word review for: {product['product_name']}...")
+    print(f"✍️ Writing Safe & Detailed Review for: {product['product_name']}...")
     
-    # 👉 PROMPT: Long Form + Safe + Human Tone
+    # 👉 SYSTEM PROMPT: Designed to prevent Ban. Focuses on Education First.
     system_prompt = """
-    You are a friendly, empathetic health enthusiast sharing honest advice with a neighbor. 
-    You are NOT a salesperson.
+    You are a professional Health Content Writer.
+    Your goal is to write a helpful, educational blog post that softly introduces a product.
     
-    Your goal is to write a MASSIVE, COMPREHENSIVE (1200–1600 words), SAFE, and HONEST review.
+    *** CRITICAL SAFETY RULES (TO PREVENT GOOGLE BAN) ***
+    1. NO FAKE PROMISES: Never say "Cure", "Treat", "Fix", "Gone in 2 days".
+    2. SOFT LANGUAGE: Always use "may help", "supports", "designed to", "aims to".
+    3. EDUCATE FIRST: The first 40% of the article must be general health advice (Diet, Sleep, Water).
+    4. LENGTH: 1200 - 1500 Words.
+    5. TONE: Helpful neighbor, not a salesman.
+    6. FORMAT: Clean HTML tags (<p>, <h2>, <ul>, <li>).
 
-    *** STRICT RULES (TO AVOID BAN & RANK HIGH) ***
-    1. WORD COUNT: Aim for 1400-1500 words. Go deep into details.
-    2. LANGUAGE: Simple, clear English (Grade 7 level).
-    3. TONE: Informational, neutral, and helpful. NEVER aggressive.
-    4. CLAIMS: NEVER say "cure", "treat", "fix". Use "supports", "may help".
-    5. FORMATTING: Use ONLY clean HTML tags (<p>, <h2>, <ul>, <li>, <strong>).
+    *** ARTICLE STRUCTURE (Must Follow) ***
 
-    *** ARTICLE STRUCTURE (EXPAND EACH SECTION) ***
-
-    Title: [Curiosity-based, safe title. Do NOT start with Product Name]
+    Title: [Write a Curiosity Hook Title. Do NOT start with Product Name.]
     |||
-    <h2>[Heading: Describe the Core Problem deeply]</h2>
-    <p>[Write 3 detailed paragraphs about the struggle/problem. Show empathy.]</p>
+    <h2>[Heading: Describe the Health Struggle]</h2>
+    <p>[Empathize with the reader about the problem (e.g., weight gain, dental issues). Write 2-3 paragraphs.]</p>
 
-    <h2>Why This Issue Happens (The Science)</h2>
-    <p>[Explain root causes in simple terms - 2-3 paragraphs]</p>
+    <h2>The Science: Why This Happens</h2>
+    <p>[Explain the root cause simply. Education builds trust.]</p>
 
-    <h2>General Ways to Support Health (Lifestyle)</h2>
-    <p>[Discuss diet, sleep, and habits first - 3 paragraphs. Do NOT mention product yet.]</p>
+    <h2>Natural Ways to Support Your Health (Lifestyle)</h2>
+    <p>[Discuss drinking water, sleeping better, and diet FIRST. Do NOT mention the product here.]</p>
 
-    <h2>An Option People Are Talking About: [Product Name]</h2>
-    <p>[Introduce the product gently. What is the story behind it?]</p>
+    <h2>Introducing [Product Name]: A Helping Hand?</h2>
+    <p>[Transition gently. Introduce the product as an option for those needing extra support.]</p>
 
-    <h2>How [Product Name] Is Designed to Work</h2>
-    <p>[Explain the working logic in detail - 2 paragraphs]</p>
+    <h2>How It Works</h2>
+    <p>[Explain the mechanism safely.]</p>
 
     <h2>Key Ingredients Breakdown</h2>
     <ul>
-    <li><strong>Ingredient 1:</strong> Detailed explanation of what it does.</li>
-    <li><strong>Ingredient 2:</strong> Detailed explanation of what it does.</li>
-    <li><strong>Ingredient 3:</strong> Detailed explanation of what it does.</li>
-    <li>(Add more ingredients)</li>
+    <li><strong>Ingredient 1:</strong> Benefits (softly stated).</li>
+    <li><strong>Ingredient 2:</strong> Benefits (softly stated).</li>
+    <li>(Add more)</li>
     </ul>
 
     <h2>Potential Benefits</h2>
     <ul>
-    <li>[Benefit 1 - Detailed explanation]</li>
-    <li>[Benefit 2 - Detailed explanation]</li>
-    <li>[Benefit 3 - Detailed explanation]</li>
-    <li>[Benefit 4 - Detailed explanation]</li>
+    <li>[Benefit 1]</li>
+    <li>[Benefit 2]</li>
+    <li>[Benefit 3]</li>
+    <li>[Benefit 4]</li>
     </ul>
 
-    <h2>Pros and Cons (Honest Look)</h2>
+    <h2>Pros and Cons (Honesty helps SEO)</h2>
     <p><strong>Pros:</strong></p>
     <ul>
     <li>Natural ingredients</li>
     <li>Easy to use</li>
-    <li>(Add 2-3 more)</li>
+    <li>(Add more)</li>
     </ul>
     <p><strong>Cons:</strong></p>
     <ul>
-    <li>Only available online</li>
-    <li>Individual results vary</li>
+    <li>Only available on official site</li>
+    <li>Results vary by individual</li>
     </ul>
 
-    <h2>Who Should Consider This?</h2>
-    <p>[Define the audience clearly]</p>
+    <h2>Who Is This For?</h2>
+    <p>[Define the ideal user]</p>
 
-    <h2>Final Verdict</h2>
-    <p>[Summarize everything warmly. Add a soft call to action.]</p>
+    <h2>Final Thoughts</h2>
+    <p>[Summarize warmly. Add a soft suggestion to check the details.]</p>
 
     <h2>Frequently Asked Questions</h2>
     <p><strong>Q: ...?</strong><br>A: ...</p>
     <p><strong>Q: ...?</strong><br>A: ...</p>
     <p><strong>Q: ...?</strong><br>A: ...</p>
-    <p><strong>Q: ...?</strong><br>A: ...</p>
 
-    <p><em><small>Disclaimer: This article is for informational purposes only. Consult a doctor before starting any supplement.</small></em></p>
+    <p><em><small>Disclaimer: This content is for informational purposes only. It is not medical advice.</small></em></p>
     """
     
-    user_prompt = f"Write a long, detailed review for '{product['product_name']}' in the niche '{product['niche']}'."
+    user_prompt = f"Write a long, educational review for '{product['product_name']}' in the niche '{product['niche']}'."
 
     try:
         response = client.chat.completions.create(
@@ -208,10 +205,10 @@ def generate_content(product):
         print(f"❌ AI Error: {e}")
         return f"Review: {product['product_name']}", ["Content generation failed."]
 
-# --- 4. IMAGE & BUTTON INJECTION (IMAGES + BUTTONS + LINKS) ---
+# --- 4. IMAGE & BUTTON INJECTION (NO IMAGE LINK - ONLY BUTTON LINK) ---
 
 def create_promo_block(image_url, affiliate_link):
-    # 👉 AMAZON STYLE BUTTON
+    # 👉 AMAZON STYLE BUTTON (Yellow/Orange)
     btn_style = """
         background: linear-gradient(to bottom, #f8c147 0%, #f7dfa5 100%);
         background-color: #f0c14b;
@@ -230,12 +227,10 @@ def create_promo_block(image_url, affiliate_link):
     """
     img_style = "width: 100%; max-width: 600px; height: auto; border: 1px solid #ddd; margin-bottom: 15px; border-radius: 8px;"
     
-    # Image aur Button Dono Link Wale
+    # 👉 CHANGE IMPLEMENTED: Image tag has NO <a> link. Only Button has <a> link.
     html = f"""
     <div style="text-align: center; margin: 40px 0; padding: 20px; background-color: #fdfdfd; border: 1px solid #eee;">
-        <a href="{affiliate_link}" target="_blank" rel="nofollow">
-            <img src="{image_url}" style="{img_style}" alt="Product Insight">
-        </a>
+        <img src="{image_url}" style="{img_style}" alt="Product Insight">
         <br>
         <a href="{affiliate_link}" target="_blank" rel="nofollow" style="{btn_style}">
             BUY NOW
@@ -252,25 +247,24 @@ def merge_content(title, paragraphs, product):
         print("⚠️ No image URLs found.")
         all_image_urls = []
 
-    # 👉 LOGIC: Select 2 to 3 Images Randomly
+    # Select 2 or 3 random images from GitHub Raw Links
     num_images_to_use = random.randint(2, 3)
     
-    # Agar images kam hain, to repeat hone do, warna sample lo
     if len(all_image_urls) < num_images_to_use:
-        ready_to_use_images = all_image_urls * 2
-        ready_to_use_images = ready_to_use_images[:num_images_to_use]
+         ready_to_use_images = all_image_urls * 2
+         ready_to_use_images = ready_to_use_images[:num_images_to_use]
     else:
-        ready_to_use_images = random.sample(all_image_urls, num_images_to_use)
+         ready_to_use_images = random.sample(all_image_urls, num_images_to_use)
 
-    print(f"✅ Selected {len(ready_to_use_images)} Images for this post.")
+    print(f"✅ Selected {len(ready_to_use_images)} Images.")
     
     affiliate_link = product['affiliate_link']
     final_html = ""
     
-    # Title
+    # Title Hook in Body
     final_html += f"<h1 style='text-align: center; color: #2c3e50; margin-bottom: 25px;'>{title}</h1>"
     
-    # Intro Text
+    # First paragraphs
     if paragraphs:
         final_html += paragraphs[0]
         if len(paragraphs) > 1: final_html += paragraphs[1]
@@ -278,25 +272,22 @@ def merge_content(title, paragraphs, product):
     else:
         remaining_paras = []
         
-    # First Image & Button
+    # First Image Block
     if ready_to_use_images:
         final_html += create_promo_block(ready_to_use_images.pop(0), affiliate_link)
         
-    # Distribute remaining images evenly
+    # Mix remaining images
     if ready_to_use_images and remaining_paras:
         gap = max(3, len(remaining_paras) // (len(ready_to_use_images) + 1))
         idx = 0
         
         for img_url in ready_to_use_images:
-            # Text blocks
             for _ in range(gap):
                 if idx < len(remaining_paras):
                     final_html += remaining_paras[idx]
                     idx += 1
-            # Image Block
             final_html += create_promo_block(img_url, affiliate_link)
             
-        # Remaining Text
         while idx < len(remaining_paras):
             final_html += remaining_paras[idx]
             idx += 1
@@ -328,7 +319,7 @@ def post_to_blogger(title, content_html, labels):
         creds = Credentials.from_authorized_user_info(creds_info)
         service = build('blogger', 'v3', credentials=creds)
         
-        # Professional Layout
+        # Styled Container
         final_styled_body = f"""
         <div style="font-family: Verdana, sans-serif; font-size: 16px; line-height: 1.8; color: #222; background-color: #fff; padding: 20px; max-width: 800px; margin: auto;">
             {content_html}
@@ -369,17 +360,16 @@ if __name__ == "__main__":
             
         seo_labels = get_smart_labels(product_data)
         
-        # 1. Content Generation (1200+ Words)
+        # Generate Safe, Long-Form Content
         title_text, paras = generate_content(product_data)
         
         if not paras:
             print("❌ Error: No content generated.")
             exit()
             
-        # 2. Merging (Images + Buttons)
+        # Merge with Non-Clickable Images & Clickable Buttons
         final_blog_post = merge_content(title_text, paras, product_data)
         
-        # 3. Publish
         post_to_blogger(title_text, final_blog_post, seo_labels)
         update_history(selected_file)
         
