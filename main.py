@@ -194,7 +194,8 @@ def generate_content(product):
             title = lines[0].strip()
             body = "\n".join(lines[1:])
             
-        title = title.replace('"', '').replace('*', '').replace('```', '')
+            # Yeh line title se "Title:", brackets, aur har tarah ke quotes ko saaf kar degi
+            title = title.replace('Title:', '').replace('[', '').replace(']', '').replace('"', '').replace("'", "").replace('*', '').strip()
         
         paragraphs = []
         for p in re.split(r'\n\n+', body):
