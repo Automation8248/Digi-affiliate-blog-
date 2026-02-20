@@ -2,7 +2,7 @@ name: Health Blog
 
 on:
   schedule:
-    - cron: '0 10 * * *' # Daily 10 AM UTC
+    - cron: '0 10 */3 * *' # Har teesre din 10 AM UTC par chalega
   workflow_dispatch:
 
 jobs:
